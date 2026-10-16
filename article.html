@@ -1,0 +1,182 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>ModelProof: I Built a Browser-Only Way to Prove an AI Model Hasn&#x27;t Been Tampered With, Stored Forever on Arweave</title><meta name="author" content="Lawal Ridwan"><meta property="og:title" content="ModelProof: I Built a Browser-Only Way to Prove an AI Model Hasn&#x27;t Been Tampered With, Stored Forever on Arweave"><meta property="og:type" content="article"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{max-width:760px;margin:2rem auto;font:18px/1.6 system-ui;padding:0 1rem}pre{overflow:auto;background:#f4f4f4;padding:1rem}</style></head><body><article><h1>ModelProof: I Built a Browser-Only Way to Prove an AI Model Hasn&#x27;t Been Tampered With, Stored Forever on Arweave</h1><p><em>By Lawal Ridwan</em></p><p><strong>TL;DR:</strong> ModelProof hashes any AI model in your
+browser, signs a provenance manifest with Ed25519 and stores it
+permanently on Arweave for free, so anyone can later prove a copy of the
+weights is authentic, or see exactly which chunks were changed.</p>
+<hr />
+<p>I'm Lawal Ridwan, a frontend and web3 developer from Nigeria. Most of
+the models I run are ones I downloaded: a GGUF from a mirror, a
+fine-tune a friend shared on Telegram, an ONNX export someone uploaded
+"with fixes". Every time, I'm trusting a filename, and I don't like
+that.</p>
+<p>So for the HackerNoon Decentralize AI Hackathon I built
+<strong>ModelProof</strong>, a small open-source PWA that gives AI
+weights the kind of provenance we already expect from software releases,
+with no server in the middle.</p>
+<ul>
+<li>Live app: <a
+href="https://ridwanlawala.github.io/modelproof/">https://ridwanlawala.github.io/modelproof/</a></li>
+<li>Code (MIT): <a
+href="https://github.com/Ridwanlawala/modelproof">https://github.com/Ridwanlawala/modelproof</a></li>
+</ul>
+<h2 id="the-problem-weights-are-just-bytes-and-bytes-move">The problem:
+weights are just bytes, and bytes move</h2>
+<p>There are three ways things go wrong today.</p>
+<ol type="1">
+<li><strong>Swapped or tampered weights.</strong> A model file can be
+re-quantised, backdoored or quietly "patched" and re-uploaded under the
+same name. Most people never check a hash, and when they do, there's
+often nothing trustworthy to compare it with.</li>
+<li><strong>Provenance lives on platforms that can change it.</strong>
+The model card, the licence and the "trained on X" claim sit on a hosted
+page. Repos get deleted, made private or rewritten, and the record goes
+with them.</li>
+<li><strong>A single hash is a blunt tool.</strong> If a 7 GB file's
+SHA-256 doesn't match, you learn <em>that</em> something changed but not
+<em>what</em>. Was it one corrupted block from a flaky download, or
+edited weights?</li>
+</ol>
+<p>Decentralised AI needs a provenance layer that is permanent, publicly
+checkable and doesn't ask you to trust whoever hosts the file.</p>
+<h2 id="what-modelproof-does">What ModelProof does</h2>
+<ol type="1">
+<li><strong>Fingerprint.</strong> Drop a model (GGUF, ONNX, safetensors;
+multi-GB is fine) plus optional dataset and config files. A Web Worker
+streams the file in 4 MiB slices, hashes each chunk with SHA-256, keeps
+a running whole-file SHA-256 (the same value Hugging Face shows for LFS
+files) and builds a Merkle root. Only one chunk is in memory at a
+time.</li>
+<li><strong>Sign.</strong> The app builds a manifest (name, version,
+licence, base model, Hugging Face URL, file sizes, chunk hashes, Merkle
+root, dataset hashes, timestamp), canonicalises it and signs it with an
+Ed25519 key generated in your browser by WebCrypto. The key stays in
+IndexedDB and you can export it.</li>
+<li><strong>Publish permanently.</strong> The signed manifest is wrapped
+in an ANS-104 data item, signed with a locally generated Arweave wallet
+and posted to ArDrive Turbo. Turbo uploads under 100 KiB are free, so
+publishing costs nothing and needs no tokens. It is tagged
+<code>App-Name: ModelProof</code> and
+<code>Merkle-Root: &lt;root&gt;</code>, so it can be found later.</li>
+<li><strong>Verify.</strong> Paste an Arweave transaction id (or drop a
+manifest file), drop the model you want to check, and ModelProof
+re-hashes it, checks the signature, compares the Merkle root and shows a
+chunk map with the exact byte ranges that differ.</li>
+</ol>
+<p>There is no backend. The whole app is about 19 KB of JavaScript (7 KB
+gzipped) and installs as an offline PWA.</p>
+<h2 id="architecture">Architecture</h2>
+<pre><code>model file ─► Web Worker ─► SHA-256 per 4 MiB chunk ─► Merkle root
+                                                         │
+metadata + dataset/config hashes ───────────────────────►│
+                                                         ▼
+               canonical JSON ─► Ed25519 signature (WebCrypto)
+                                                         ▼
+          ANS-104 data item (RSA-PSS, local Arweave JWK) ─► upload.ardrive.io (free &lt; 100 KiB)
+                                                         ▼
+                              Arweave tx id ─► arweave.net/&lt;id&gt;</code></pre>
+<p>Two design choices are worth explaining.</p>
+<p><strong>A domain-separated Merkle tree.</strong> Leaves are
+<code>SHA-256(0x00 ‖ chunkHash)</code> and inner nodes are
+<code>SHA-256(0x01 ‖ left ‖ right)</code>. An odd node is promoted
+rather than duplicated, which avoids the classic ambiguity where
+<code>[a, b, c]</code> and <code>[a, b, c, c]</code> share a root.
+Storing every chunk hash in the manifest is what lets the verifier say
+"chunk #812 changed" instead of just "no".</p>
+<p><strong>No Arweave SDK.</strong> I wanted the app to stay tiny and
+free of Node polyfills, so I implemented the ANS-104 data-item format
+directly on WebCrypto: Avro-encoded tags, Arweave's SHA-384 "deep hash",
+RSA-PSS signing and the binary layout. It comes to about 120 lines.
+Here's the core:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode ts"><code class="sourceCode typescript"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">export</span> <span class="kw">async</span> <span class="kw">function</span> <span class="fu">createDataItem</span>(data<span class="op">:</span> <span class="bu">Uint8Array</span><span class="op">,</span> tags<span class="op">:</span> Tag[]<span class="op">,</span> jwk<span class="op">:</span> JsonWebKey) {</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> owner <span class="op">=</span> <span class="fu">fromB64url</span>(jwk<span class="op">.</span><span class="at">n</span><span class="op">!</span>)<span class="op">;</span>                 <span class="co">// 512-byte RSA modulus</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> tagBytes <span class="op">=</span> <span class="fu">serializeTags</span>(tags)<span class="op">;</span>             <span class="co">// Avro array of {name, value}</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> empty <span class="op">=</span> <span class="kw">new</span> <span class="bu">Uint8Array</span>(<span class="dv">0</span>)<span class="op">;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> msg <span class="op">=</span> <span class="cf">await</span> <span class="fu">deepHash</span>([<span class="fu">utf8</span>(<span class="st">&#39;dataitem&#39;</span>)<span class="op">,</span> <span class="fu">utf8</span>(<span class="st">&#39;1&#39;</span>)<span class="op">,</span> <span class="fu">utf8</span>(<span class="st">&#39;1&#39;</span>)<span class="op">,</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>                              owner<span class="op">,</span> empty<span class="op">,</span> empty<span class="op">,</span> tagBytes<span class="op">,</span> data])<span class="op">;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> key <span class="op">=</span> <span class="cf">await</span> crypto<span class="op">.</span><span class="at">subtle</span><span class="op">.</span><span class="fu">importKey</span>(<span class="st">&#39;jwk&#39;</span><span class="op">,</span> { <span class="op">...</span>jwk<span class="op">,</span> alg<span class="op">:</span> <span class="st">&#39;PS256&#39;</span> }<span class="op">,</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>                { name<span class="op">:</span> <span class="st">&#39;RSA-PSS&#39;</span><span class="op">,</span> hash<span class="op">:</span> <span class="st">&#39;SHA-256&#39;</span> }<span class="op">,</span> <span class="kw">false</span><span class="op">,</span> [<span class="st">&#39;sign&#39;</span>])<span class="op">;</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> signature <span class="op">=</span> <span class="kw">new</span> <span class="bu">Uint8Array</span>(</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">await</span> crypto<span class="op">.</span><span class="at">subtle</span><span class="op">.</span><span class="fu">sign</span>({ name<span class="op">:</span> <span class="st">&#39;RSA-PSS&#39;</span><span class="op">,</span> saltLength<span class="op">:</span> <span class="dv">32</span> }<span class="op">,</span> key<span class="op">,</span> <span class="fu">buf</span>(msg)))<span class="op">;</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> raw <span class="op">=</span> <span class="fu">concat</span>(<span class="kw">new</span> <span class="bu">Uint8Array</span>([<span class="dv">1</span><span class="op">,</span> <span class="dv">0</span>])<span class="op">,</span> signature<span class="op">,</span> owner<span class="op">,</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>                     <span class="kw">new</span> <span class="bu">Uint8Array</span>([<span class="dv">0</span>])<span class="op">,</span> <span class="kw">new</span> <span class="bu">Uint8Array</span>([<span class="dv">0</span>])<span class="op">,</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>                     <span class="fu">u64le</span>(tags<span class="op">.</span><span class="at">length</span>)<span class="op">,</span> <span class="fu">u64le</span>(tagBytes<span class="op">.</span><span class="at">length</span>)<span class="op">,</span> tagBytes<span class="op">,</span> data)<span class="op">;</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> { id<span class="op">:</span> <span class="fu">b64url</span>(<span class="cf">await</span> <span class="fu">sha</span>(<span class="st">&#39;SHA-256&#39;</span><span class="op">,</span> signature))<span class="op">,</span> raw }<span class="op">;</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<p>Then it's one <code>fetch</code> to
+<code>https://upload.ardrive.io/v1/tx</code> with
+<code>Content-Type: application/octet-stream</code>. Turbo checks the
+signature itself, so an item that's even slightly malformed gets
+rejected. That made Turbo accepting it a good end-to-end test of my
+encoder.</p>
+<h2 id="a-real-verification-walkthrough">A real verification
+walkthrough</h2>
+<p>The repo ships a tiny demo model, <code>tiny-mlp.safetensors</code>
+(a 256→48→10 MLP, 51,720 bytes), and a copy where I changed <strong>one
+float32 weight</strong> at byte 25,860.</p>
+<p>I hashed the original with 16 KiB chunks (4 chunks, so the demo is
+easy to see), signed the manifest and published it through Turbo. This
+is the real transaction:</p>
+<ul>
+<li><strong>Tx id:</strong>
+<code>8Fw3X6381ocPzuyaGtPsOhcSrGbHWudVLo5TfD82orc</code></li>
+<li><strong>Permanent link:</strong> <a
+href="https://arweave.net/8Fw3X6381ocPzuyaGtPsOhcSrGbHWudVLo5TfD82orc">https://arweave.net/8Fw3X6381ocPzuyaGtPsOhcSrGbHWudVLo5TfD82orc</a></li>
+<li><strong>Merkle root tag:</strong>
+<code>9942b76f19bce75a7553db5a2de88b10bbc619e289e24fb922a80516605957bf</code></li>
+<li><strong>Cost:</strong> <code>"winc": "0"</code>, free</li>
+</ul>
+<p>Querying the gateway's GraphQL returns the tags exactly as signed:
+<code>Content-Type: application/json</code>,
+<code>App-Name: ModelProof</code>,
+<code>Merkle-Root: 9942b76f…57bf</code> and
+<code>Model-Name: tiny-mlp (ModelProof demo)</code>.</p>
+<p>In the app's <strong>Verify</strong> tab:</p>
+<ul>
+<li><strong>Original file:</strong> the manifest is fetched from
+Arweave, the Ed25519 signature checks out, the Merkle root matches, the
+whole-file SHA-256 matches and all 4/4 chunks are green. Result:
+<em>Authentic</em>.</li>
+<li><strong>Tampered file:</strong> same size and same filename, but the
+Merkle root and SHA-256 fail and the chunk map shows <strong>chunk #1
+(bytes 16384–32767)</strong> in red. That's precisely the chunk holding
+the weight I edited.</li>
+</ul>
+<p>The same scenario runs in CI as a Vitest test, alongside tests for
+the Merkle tree, canonicalisation, Ed25519 signing (any edit to the
+manifest, including changing the licence, breaks the signature) and
+ANS-104 signing round-trips. There are 18 tests and all of them
+pass.</p>
+<h2 id="limitations">Limitations</h2>
+<p>I'd rather be upfront about these:</p>
+<ul>
+<li><strong>A signature proves <em>who</em>, not <em>whether to trust
+them</em>.</strong> ModelProof binds a manifest to a key. Publishers
+still have to announce their public key somewhere you already trust: a
+website, a model card or an ArNS/ENS name.</li>
+<li><strong>Free-tier ceiling.</strong> Each chunk hash costs about 67
+bytes, so at 4 MiB chunks one free manifest covers a model of about 6
+GB. Bigger models need larger chunks (the app warns you) or a funded
+wallet.</li>
+<li><strong>Propagation.</strong> Turbo's gateway serves a new item
+immediately, but arweave.net can take a few minutes to index it. The
+verifier tries both.</li>
+<li><strong>Keys in IndexedDB.</strong> If you clear site data, your
+keys are gone, so back them up from the Keys tab.</li>
+<li><strong>Provenance, not safety.</strong> A matching hash proves the
+bytes are what was signed. It doesn't prove the model behaves well or
+that the training claims are true.</li>
+</ul>
+<h2 id="whats-next-nosana-inference-attestations">What's next: Nosana
+inference attestations</h2>
+<p>Provenance for weights is step one. Next I want to run a verified
+model on <strong>Nosana</strong>'s decentralised GPU network and have
+each job publish a signed attestation of
+<code>{merkleRoot, inputHash, outputHash}</code> to Arweave next to the
+manifest. That would link "these exact weights" to "this exact output",
+which is the missing piece for verifiable inference. After that:
+automatic cross-checks against Hugging Face's LFS hashes, discovery by
+<code>Merkle-Root</code> tag ("who else has signed this model?"), and a
+GitHub Action that publishes a manifest with every model release.</p>
+<p>If you ship models, try it on your next release and pin the tx id in
+your model card. It's free, it's permanent and it takes about a
+minute.</p>
+</article></body></html>
