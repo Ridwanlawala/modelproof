@@ -1,0 +1,10 @@
+{
+  "architecture": "mlp",
+  "layers": [
+    256,
+    48,
+    10
+  ],
+  "activation": "relu",
+  "dtype": "float32"
+}
