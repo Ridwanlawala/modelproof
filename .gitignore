@@ -4,3 +4,4 @@ dist
 secrets/
 *wallet*.json
 *private*.jwk.json
+package-lock.json
