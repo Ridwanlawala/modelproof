@@ -1,0 +1,45 @@
+{
+  "manifest": {
+    "schema": "modelproof/manifest@1",
+    "model": {
+      "name": "tiny-mlp (ModelProof demo)",
+      "version": "1.0.0",
+      "license": "MIT",
+      "baseModel": "none (random init, seed 42)",
+      "sourceUrl": "https://github.com/Ridwanlawala/modelproof/tree/main/public/sample"
+    },
+    "files": [
+      {
+        "role": "model",
+        "name": "tiny-mlp.safetensors",
+        "size": 51720,
+        "sha256": "6da371f5eb788c00ff14ff6d4e0fbd24be6950675d40e5a9cc5baada3d4b28b0",
+        "chunkSize": 16384,
+        "chunkCount": 4,
+        "merkleRoot": "9942b76f19bce75a7553db5a2de88b10bbc619e289e24fb922a80516605957bf",
+        "chunks": [
+          "663ab97cc4a062e0b5361cd197441a57a02dbabfcf59a21392bd094acb71ee6f",
+          "703a815c80840deb4e37ca93d10e2518004129df963972f82468537e1aadbc72",
+          "9f80fad68e3e37217ccc0a5e4f2eaf8bc7b9647d34c8228b754ae3e5f64c33a4",
+          "9b36c156ac9768dadcddebfe7c2c267918cd59ff91cacb1b12dc8ac864861c7e"
+        ]
+      },
+      {
+        "role": "config",
+        "name": "config.json",
+        "size": 116,
+        "sha256": "2263bf011f95bbe5d8a5798fa9e013df609d4b7750050da5290ebdddc37af0ec",
+        "chunkSize": 16384,
+        "chunkCount": 1,
+        "merkleRoot": "c1ab25ce6c9db2fb74f300abb7a8704294de58ab09d151de73bf49453c3f1ddd"
+      }
+    ],
+    "merkleRoot": "9942b76f19bce75a7553db5a2de88b10bbc619e289e24fb922a80516605957bf",
+    "createdAt": "2026-10-16T08:31:37.617Z",
+    "signer": {
+      "alg": "Ed25519",
+      "publicKey": "6ASY3pP2QdgPbgDIc6hTgkRHCrC76xOSrFPd_MnhG6o"
+    }
+  },
+  "signature": "tYevpb74jvrQVSG1agcSzX1xAh4LEpxl8eNOEUVu3m_faKgSebmwOoIapNaB8qa4E72XjreBlq_UTraHN_43Ag"
+}
