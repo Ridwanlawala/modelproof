@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ModelProof · Verifiable AI model provenance on Arweave</title>
+  <meta name="description" content="Hash a model in your browser, sign a provenance manifest with Ed25519 and store it permanently on Arweave. Verify any copy chunk by chunk." />
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <meta name="theme-color" content="#0f172a" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><img src="./favicon.svg" alt="" width="32" height="32" /><div><h1>ModelProof</h1><p>Verifiable AI model provenance · browser-only · stored on Arweave</p></div></div>
+    <nav role="tablist">
+      <button role="tab" data-tab="publish" aria-selected="true">Publish</button>
+      <button role="tab" data-tab="verify" aria-selected="false">Verify</button>
+      <button role="tab" data-tab="keys" aria-selected="false">Keys</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="publish" class="panel">
+      <div class="card">
+        <h2>1 · Fingerprint the model</h2>
+        <label class="drop" id="modelDrop"><input type="file" id="modelFile" hidden /><strong>Drop a model file</strong><span>GGUF, ONNX, safetensors… multi-GB is fine: it is streamed in chunks and never leaves your device.</span><em id="modelName"></em></label>
+        <div class="grid2">
+          <label class="drop small"><input type="file" id="dataFiles" multiple hidden /><strong>Dataset files (optional)</strong><em id="dataNames"></em></label>
+          <label class="drop small"><input type="file" id="configFiles" multiple hidden /><strong>Config / tokenizer (optional)</strong><em id="configNames"></em></label>
+        </div>
+        <div class="grid3">
+          <label>Model name<input id="mName" placeholder="llama-3.2-1b-instruct-q4" required /></label>
+          <label>Version<input id="mVersion" placeholder="1.0.0" value="1.0.0" /></label>
+          <label>License<input id="mLicense" placeholder="Apache-2.0" /></label>
+          <label>Base model<input id="mBase" placeholder="meta-llama/Llama-3.2-1B" /></label>
+          <label class="span2">Hugging Face source URL<input id="mUrl" type="url" placeholder="https://huggingface.co/…" /></label>
+          <label>Chunk size<select id="chunkSize"><option value="4194304" selected>4 MiB (default)</option><option value="1048576">1 MiB</option><option value="65536">64 KiB</option><option value="16384">16 KiB (tiny files)</option></select></label>
+        </div>
+        <div class="row"><button id="hashBtn" class="primary">Hash &amp; sign manifest</button><button id="demoPublish" class="ghost">Use bundled demo model</button></div>
+        <div class="progress" hidden><div class="bar"><i></i></div><span class="ptext"></span></div>
+      </div>
+
+      <div class="card" id="manifestCard" hidden>
+        <h2>2 · Signed provenance manifest</h2>
+        <dl class="facts" id="manifestFacts"></dl>
+        <details><summary>Manifest JSON</summary><pre id="manifestJson"></pre></details>
+        <div class="row">
+          <button id="publishBtn" class="primary">Publish to Arweave (free via ArDrive Turbo)</button>
+          <button id="downloadBtn" class="ghost">Download manifest</button>
+        </div>
+        <p class="hint" id="sizeHint"></p>
+        <div id="publishResult"></div>
+      </div>
+    </section>
+
+    <section id="verify" class="panel" hidden>
+      <div class="card">
+        <h2>Verify a model against its manifest</h2>
+        <div class="grid2">
+          <label>Arweave transaction id<input id="txId" placeholder="43-character tx id" spellcheck="false" /></label>
+          <label class="drop small"><input type="file" id="manifestFile" accept=".json,application/json" hidden /><strong>…or a manifest file</strong><em id="manifestName"></em></label>
+        </div>
+        <label class="drop" id="vModelDrop"><input type="file" id="vModelFile" hidden /><strong>Drop the model file you want to check</strong><em id="vModelName"></em></label>
+        <div class="row"><button id="verifyBtn" class="primary">Verify</button>
+          <button id="demoGood" class="ghost">Demo: original sample</button>
+          <button id="demoBad" class="ghost">Demo: tampered sample</button></div>
+        <div class="progress" hidden><div class="bar"><i></i></div><span class="ptext"></span></div>
+      </div>
+      <div class="card" id="verifyCard" hidden><div id="verifyOut"></div></div>
+    </section>
+
+    <section id="keys" class="panel" hidden>
+      <div class="card">
+        <h2>Your keys (stored only in this browser)</h2>
+        <dl class="facts" id="keyFacts"></dl>
+        <div class="row">
+          <button id="exportEd" class="ghost">Export Ed25519 signing key</button>
+          <label class="button ghost">Import signing key<input type="file" id="importEd" accept=".json" hidden /></label>
+          <button id="exportAr" class="ghost">Export Arweave wallet</button>
+          <label class="button ghost">Import Arweave wallet<input type="file" id="importAr" accept=".json" hidden /></label>
+        </div>
+        <p class="hint">Your Ed25519 key is your publisher identity: anyone can check that manifests signed with it came from you. Back it up. The Arweave wallet only pays for (free) uploads and needs no funds for manifests under 100 KiB.</p>
+      </div>
+    </section>
+  </main>
+  <footer>Open source (MIT) · <a href="https://github.com/Ridwanlawala/modelproof">GitHub</a> · Built for the HackerNoon Decentralize AI Hackathon</footer>
+  <script type="module" src="./src/main.ts"></script>
+</body>
+</html>
